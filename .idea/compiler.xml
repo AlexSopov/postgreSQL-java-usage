@@ -19,8 +19,8 @@
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
-      <module name="postgresql-java-usage_main" target="1.5" />
-      <module name="postgresql-java-usage_test" target="1.5" />
+      <module name="postgresql-java-usage_main" target="1.8" />
+      <module name="postgresql-java-usage_test" target="1.8" />
     </bytecodeTargetLevel>
   </component>
 </project>
