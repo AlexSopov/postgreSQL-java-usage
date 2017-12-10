@@ -1,26 +1,26 @@
 package githubapi.data.models;
 
 public class RepositoryProgrammingLanguage {
-    private long repositoryId;
-    private long programmingLanguageId;
+    private int repositoryId;
+    private int programmingLanguageId;
 
-    public RepositoryProgrammingLanguage(long repositoryId, long programmingLanguageId) {
+    public RepositoryProgrammingLanguage(int repositoryId, int programmingLanguageId) {
         this.repositoryId = repositoryId;
         this.programmingLanguageId = programmingLanguageId;
     }
 
-    public long getRepositoryId() {
+    public int getRepositoryId() {
 
         return repositoryId;
     }
-    public void setRepositoryId(long repositoryId) {
+    public void setRepositoryId(int repositoryId) {
         this.repositoryId = repositoryId;
     }
 
-    public long getProgrammingLanguageId() {
+    public int getProgrammingLanguageId() {
         return programmingLanguageId;
     }
-    public void setProgrammingLanguageId(long programmingLanguageId) {
+    public void setProgrammingLanguageId(int programmingLanguageId) {
         this.programmingLanguageId = programmingLanguageId;
     }
 }

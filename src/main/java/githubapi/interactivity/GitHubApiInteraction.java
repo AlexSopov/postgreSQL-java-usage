@@ -1,7 +1,10 @@
-package githubapi.interop;
+package githubapi.interactivity;
 
-import githubapi.data.models.User;
-import githubapi.data.models.Repository;
+import githubapi.data.converters.JsonObjectToModelConverter;
+import githubapi.data.models.GitHubCommit;
+import githubapi.data.models.GitHubUser;
+import githubapi.data.models.GitHubRepository;
+import githubapi.data.models.ProgrammingLanguage;
 import javafx.util.Pair;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
@@ -18,25 +21,24 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class GitHubApiInterop {
+public class GitHubApiInteraction {
 
     private final String GITHUB_OAUTH_TOKEN;
 
-    public GitHubApiInterop() {
+    public GitHubApiInteraction() {
         GITHUB_OAUTH_TOKEN = System.getenv("GITHUB_OAUTH_TOKEN");
     }
 
-    public void gatherRepositroiesInfo(int maxRepositories) throws URISyntaxException, IOException {
+    public void getRepositoriesInfo(Consumer<GitHubRepository> onRepositoryDataGathered, int maxRepositoriesCount) throws URISyntaxException, IOException {
         URI requestUri = getBaseUriToGitHubApi()
                 .setPath("search/repositories")
-                .setParameter("q", "stars:>0")
+                .setParameter("q", "stars:>0 created:>2017-11-10")
                 .setParameter("sort", "stars")
                 .setParameter("order", "desc")
                 .build();
@@ -44,62 +46,111 @@ public class GitHubApiInterop {
         Pair<String, String> currentResponse;
         JSONObject currentJsonObject;
         JSONArray currentRepositories;
+        GitHubRepository processingGitHubRepository;
         int processedRepositoriesCount = 0;
 
-        while (requestUri != null && processedRepositoriesCount < maxRepositories) {
+        while (requestUri != null && processedRepositoriesCount < maxRepositoriesCount) {
             currentResponse = getResponse(requestUri);
 
             currentJsonObject = new JSONObject(currentResponse.getValue());
             currentRepositories = currentJsonObject.getJSONArray("items");
 
-            for (int i = 0; i < currentRepositories.length() && processedRepositoriesCount < maxRepositories; i++) {
-                gatherRepositoryInfo(currentRepositories.getJSONObject(i));
-                processedRepositoriesCount++;
+            for (int i = 0; i < currentRepositories.length() && processedRepositoriesCount < maxRepositoriesCount; i++, processedRepositoriesCount++) {
+                currentJsonObject = currentRepositories.getJSONObject(i);
+
+                processingGitHubRepository = gatherRepositoryInfo(currentJsonObject);
+                onRepositoryDataGathered.accept(processingGitHubRepository);
             }
 
             requestUri = matchNextResponsePage(currentResponse.getKey());
-            processedRepositoriesCount += currentRepositories.length();
         }
     }
 
-    private void gatherRepositoryInfo(JSONObject repositoryJson) {
-        // Get owner
-        // Create repository, with owner
-        // Gather programming languages
-        // Gather commits: autrhor and commit info for each
+    private GitHubRepository gatherRepositoryInfo(JSONObject repositoryJson) throws IOException, URISyntaxException {
+        // Get data properties values
+        int repositoryId =  getRepositoryId(repositoryJson);
+        String repositoryName = getRepositoryName(repositoryJson);
+        int repositoryStarsCount = getRepositoryStarsCount(repositoryJson);
+        String repositoryDescription = getRepositoryDescription(repositoryJson);
 
-        //gatherRepositoryOwnerInfo(repositoryJson);
+        // Get navigation properties data
+        GitHubUser repositoryOwner = getRepositoryOwner(repositoryJson);
+        List<GitHubCommit> repositoryCommits = getRepositoryCommits(repositoryJson);
+        List<ProgrammingLanguage> repositoryProgrammingLanguages = getRepositoryProgrammingLanguages(repositoryName);
 
+        // Create instande of GitHubRepository
+        GitHubRepository gatheredResult = new GitHubRepository(
+                repositoryId,
+                repositoryName,
+                repositoryOwner.getId(),
+                repositoryStarsCount,
+                repositoryDescription
+        );
+
+        gatheredResult.setRepositoryOwner(repositoryOwner);
+        gatheredResult.setRepositoryCommits(repositoryCommits);
+        gatheredResult.setRepositoryProgrammingLanguages(repositoryProgrammingLanguages);
+
+        return gatheredResult;
     }
-    private User gatherRepositoryOwnerInfo(JSONObject repositoryJson) {
-        return null;
+
+    private int getRepositoryId(JSONObject repositoryJson) {
+        return repositoryJson.getInt("id");
     }
-    private void gatherRepositoryProgrammingLanguages(Repository repository) {
-        //TODO
+    private String getRepositoryName(JSONObject repositoryJson) {
+        return repositoryJson.getString("full_name");
     }
-    private void gatherRepositoryCommits(Repository repository) throws URISyntaxException, IOException {
+    private int getRepositoryStarsCount(JSONObject repositoryJson) {
+        return repositoryJson.getInt("stargazers_count");
+    }
+    private String getRepositoryDescription(JSONObject repositoryJson) {
+        return repositoryJson.getString("description");
+    }
+
+    private GitHubUser getRepositoryOwner(JSONObject repositoryJson) {
+        return JsonObjectToModelConverter.convertToGitHubUser(repositoryJson.getJSONObject("owner"));
+    }
+    private List<GitHubCommit> getRepositoryCommits(JSONObject repositoryJson) throws URISyntaxException, IOException {
+        String repositoryName = getRepositoryName(repositoryJson);
+        int repositoryId = getRepositoryId(repositoryJson);
+
         URI repositoryCommitsRequest = getBaseUriToGitHubApi()
-                .setPath(String.format("repos/%s/commits", repository.getName()))
+                .setPath(String.format("repos/%s/commits", repositoryName))
                 .build();
 
         Pair<String, String> currentResponse;
         JSONObject currentCommitJsonObject;
+        JSONArray array;
+        List<GitHubCommit> commitsToRepository = new ArrayList<>();
+        GitHubCommit currentCommit;
 
         while (repositoryCommitsRequest != null) {
             currentResponse = getResponse(repositoryCommitsRequest);
-            currentCommitJsonObject = new JSONObject(currentResponse.getValue());
+            array = new JSONArray(currentResponse.getValue());
 
-            for (Object commit : currentCommitJsonObject.getJSONArray("items")) {
+
+            for (Object commit : array) {
                 currentCommitJsonObject = (JSONObject) commit;
-
                 if (currentCommitJsonObject.isNull("committer")) {
                     continue;
                 }
-                currentCommitJsonObject = currentCommitJsonObject.getJSONObject("committer");
+
+                currentCommit = JsonObjectToModelConverter.convertToGitHubCommit(currentCommitJsonObject, repositoryId);
+                commitsToRepository.add(currentCommit);
             }
 
             repositoryCommitsRequest = matchNextResponsePage(currentResponse.getKey());
         }
+
+        return commitsToRepository;
+    }
+    private List<ProgrammingLanguage> getRepositoryProgrammingLanguages(String repositoryName) throws URISyntaxException, IOException {
+        URI repositoryCommitsRequest = getBaseUriToGitHubApi()
+                .setPath(String.format("repos/%s/languages", repositoryName))
+                .build();
+
+        JSONObject programmingLanguagesResponse = new JSONObject(getResponse(repositoryCommitsRequest));
+        return JsonObjectToModelConverter.convertToProgrammingLanguagesList(programmingLanguagesResponse);
     }
 
     /**
